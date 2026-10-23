@@ -10,7 +10,7 @@
   "license": "MIT",
   "author": "c0dingbear",
   "dependencies": {
-    "@c0dingbear/chromium-idb-reader": "file:../chromium-idb-reader",
+    "@c0dingbear/chromium-idb-reader": "^0.1.0",
     "keytar": "^7.9.0",
     "libsodium-wrappers": "^0.8.4"
   }
