@@ -1,0 +1,17 @@
+{
+  "name": "@c0dingbear/termius-vault",
+  "version": "0.1.0",
+  "description": "Read the Termius local vault: decrypt the IndexedDB store and reconstruct the complete saved-host list (address, port, identity, key, connect-chain) from Termius' normalized model — including hosts never connected to.",
+  "main": "termius-lib.js",
+  "type": "commonjs",
+  "files": ["termius-lib.js", "termius-model.js", "README.md", "LICENSE"],
+  "engines": { "node": ">=16" },
+  "keywords": ["termius", "ssh", "vault", "indexeddb", "export", "decrypt"],
+  "license": "MIT",
+  "author": "c0dingbear",
+  "dependencies": {
+    "@c0dingbear/chromium-idb-reader": "file:../chromium-idb-reader",
+    "keytar": "^7.9.0",
+    "libsodium-wrappers": "^0.8.4"
+  }
+}
