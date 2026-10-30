@@ -1,6 +1,6 @@
 {
   "name": "@c0dingbear/termius-vault",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Read the Termius local vault: decrypt the IndexedDB store and reconstruct the complete saved-host list (address, port, identity, key, connect-chain) from Termius' normalized model — including hosts never connected to.",
   "main": "termius-lib.js",
   "type": "commonjs",

@@ -129,48 +129,46 @@ async function extractAndDecrypt(key) {
   return results;
 }
 
-function extractIndexedDbEntities() {
+// The host/ssh_config/hosts_chain relation entities are stored as PLAINTEXT V8
+// values (not inside the encrypted BA blobs). Reading them by scanning raw file
+// bytes for a marker only works while those records sit in the uncompressed
+// .log; once Termius compacts the database they move into Snappy-compressed
+// .ldb SSTable blocks and the byte scan finds nothing (this is what silently
+// broke the proxy connect-chain). So we decompress every current record via the
+// LevelDB reader and V8-deserialize the value instead — compaction-proof.
+function readV8RelationEntities() {
   const dbPath = getDbPath();
+  if (!fs.existsSync(dbPath)) return [];
+  let records;
+  try { records = readCurrentRecords(dbPath); } catch { return []; }
+  const out = [];
+  for (const r of records) {
+    for (let start = 0; start < 8; start++) {
+      try {
+        const e = v8.deserialize(r.value.subarray(start));
+        if (e && typeof e === 'object') { out.push(e); break; }
+      } catch {}
+    }
+  }
+  return out;
+}
+
+function extractIndexedDbEntities() {
   const results = [];
-  if (!fs.existsSync(dbPath)) return results;
-  for (const file of fs.readdirSync(dbPath).filter(name => name.endsWith('.log') || name.endsWith('.ldb'))) {
-    const buffer = fs.readFileSync(path.join(dbPath, file));
-    let offset = 0;
-    while ((offset = buffer.indexOf(Buffer.from('hosts_chain'), offset)) !== -1) {
-      for (let start = Math.max(0, offset - 512); start <= offset; start++) {
-        try {
-          const entity = v8.deserialize(buffer.subarray(start));
-          if (entity && Array.isArray(entity.hosts_chain) && entity.ssh_config != null) {
-            results.push({ decryptedStr: JSON.stringify(entity), id: entity.id });
-            break;
-          }
-        } catch {}
-      }
-      offset += 11;
+  for (const entity of readV8RelationEntities()) {
+    if (Array.isArray(entity.hosts_chain) && entity.ssh_config != null) {
+      results.push({ decryptedStr: JSON.stringify(entity), id: entity.id });
     }
   }
   return results;
 }
 
 function extractIndexedDbHostConfigRelations() {
-  const dbPath = getDbPath();
   const relations = new Map();
-  if (!fs.existsSync(dbPath)) return relations;
-  for (const file of fs.readdirSync(dbPath).filter(name => name.endsWith('.log') || name.endsWith('.ldb'))) {
-    const buffer = fs.readFileSync(path.join(dbPath, file));
-    let offset = 0;
-    while ((offset = buffer.indexOf(Buffer.from('ssh_config'), offset)) !== -1) {
-      for (let start = Math.max(0, offset - 1200); start <= offset; start++) {
-        try {
-          const entity = v8.deserialize(buffer.subarray(start));
-          const config = entity?.ssh_config;
-          if (entity?.id != null && config && typeof config === 'object' && config.id != null) {
-            relations.set(String(config.id), Number(entity.id));
-            break;
-          }
-        } catch {}
-      }
-      offset += 10;
+  for (const entity of readV8RelationEntities()) {
+    const config = entity && entity.ssh_config;
+    if (entity && entity.id != null && config && typeof config === 'object' && config.id != null) {
+      relations.set(String(config.id), Number(entity.id));
     }
   }
   return relations;
