@@ -53,20 +53,23 @@ const DB_SSHCONFIG = 3;
 const DB_IDENTITY = 11;
 const DB_SSHKEY = 10;
 
-function scanV8Entities(dbPath, marker, predicate) {
+// The relation entities (host <-> ssh_config/identity, session -> host/key) are
+// plaintext V8 values. Scanning raw file bytes for a marker only works while
+// they sit in the uncompressed .log; once Termius compacts the database they
+// move into Snappy-compressed .ldb blocks and a raw scan silently misses most of
+// them (hosts lose their jump-host chain / username). So scan the already
+// decompressed current records instead — compaction-proof.
+function scanV8Entities(records, marker, predicate) {
   const out = [];
   const needle = Buffer.from(marker);
-  for (const file of fs.readdirSync(dbPath).filter(n => n.endsWith('.ldb') || n.endsWith('.log'))) {
-    const buf = fs.readFileSync(path.join(dbPath, file));
-    let off = 0;
-    while ((off = buf.indexOf(needle, off)) !== -1) {
-      for (let start = Math.max(0, off - 1500); start <= off; start++) {
-        try {
-          const e = v8.deserialize(buf.subarray(start));
-          if (e && typeof e === 'object' && predicate(e)) { out.push(e); break; }
-        } catch {}
-      }
-      off += marker.length;
+  for (const r of records) {
+    const value = r.value;
+    if (!value || value.indexOf(needle) === -1) continue;
+    for (let start = 0; start < 8; start++) {
+      try {
+        const e = v8.deserialize(value.subarray(start));
+        if (e && typeof e === 'object') { if (predicate(e)) out.push(e); break; }
+      } catch {}
     }
   }
   return out;
@@ -106,7 +109,7 @@ function buildHostList({ dbPath, decryptFirstJson, sessionConns }) {
   // and the ssh_config/identity local ids from whichever entity has them.
   const relByHost = new Map();     // host.local_id -> { sshConfigLocal, identityLocal }
   const hostBigByLocal = new Map(); // host.local_id -> host big id
-  for (const e of scanV8Entities(dbPath, 'ssh_config', e => e.ssh_config && e.ssh_config.local_id != null && e.local_id != null)) {
+  for (const e of scanV8Entities(records, 'ssh_config', e => e.ssh_config && e.ssh_config.local_id != null && e.local_id != null)) {
     const cur = relByHost.get(e.local_id) || {};
     if (cur.sshConfigLocal == null) cur.sshConfigLocal = e.ssh_config.local_id;
     if (cur.identityLocal == null && e.identity && e.identity.local_id != null) cur.identityLocal = e.identity.local_id;
@@ -121,7 +124,7 @@ function buildHostList({ dbPath, decryptFirstJson, sessionConns }) {
   // ssh_config id, not the host id, so we take the authoritative host id from
   // here (needed to match the connect-chain / jump-host relations downstream).
   const sessKeyByHost = new Map();
-  for (const e of scanV8Entities(dbPath, 'session_log_data', e => e.host && e.host.local_id != null)) {
+  for (const e of scanV8Entities(records, 'session_log_data', e => e.host && e.host.local_id != null)) {
     if (e.ssh_key && e.ssh_key.local_id != null && !sessKeyByHost.has(e.host.local_id)) {
       sessKeyByHost.set(e.host.local_id, e.ssh_key.local_id);
     }
